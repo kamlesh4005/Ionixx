@@ -6,9 +6,6 @@ export const config = {
   defaultStockPrice: 100,
   sharePrecision: 3,
 
-  marketOpenHourUTC: 9,
-  marketOpenMinuteUTC: 30,
-
   requestTimeoutMs: 5000,
 
   rateLimit: {

@@ -116,17 +116,51 @@ describe('Order Service', () => {
       expect(response.meta.sharePrecision).toBe(3);
     });
 
-    it('sets executionTime to a weekday at 09:30 UTC', async () => {
+    it('sets executionTime to a valid market time in ET', async () => {
       const input = makeInput();
       const startTime = process.hrtime.bigint();
       const { response } = await createSplitOrder(input, startTime);
 
       const execDate = new Date(response.executionTime);
-      const day = execDate.getUTCDay();
-      expect(day).toBeGreaterThanOrEqual(1);
-      expect(day).toBeLessThanOrEqual(5);
-      expect(execDate.getUTCHours()).toBe(9);
-      expect(execDate.getUTCMinutes()).toBe(30);
+      expect(isNaN(execDate.getTime())).toBe(false);
+
+      // Inspect the execution time in America/New_York
+      const fmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        weekday: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+      const parts = fmt.formatToParts(execDate);
+      const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+
+      // Always a trading day
+      expect(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']).toContain(get('weekday'));
+
+      const etHour = parseInt(get('hour'));
+      const etMin = parseInt(get('minute'));
+      const isAtOpen = etHour === 9 && etMin === 30;
+      const isNow = Math.abs(execDate.getTime() - Date.now()) < 5000;
+      // Either scheduled at today's open (09:30 ET) or executed immediately (market open)
+      expect(isAtOpen || isNow).toBe(true);
+    });
+
+    it('amount equals quantity × price for financial accuracy', async () => {
+      // weight=100, price=300, amount=1000:
+      //   allocatedAmount = 1000, quantity = 1000/300 = 3.333 (3dp)
+      //   actual cost = 3.333 × 300 = 999.90  (not 1000.00)
+      const input = makeInput({
+        portfolio: [{ symbol: 'AAPL', weight: 100, price: 300 }],
+        amount: 1000,
+      });
+      const { response } = await createSplitOrder(input, process.hrtime.bigint());
+
+      const order = response.orders[0];
+      expect(order.quantity).toBe(3.333);
+      // amount must reflect what is actually paid, not the pre-rounding allocation
+      expect(order.amount).toBe(parseFloat((order.quantity * order.price).toFixed(2)));
+      expect(order.amount).toBe(999.9); // 3.333 × 300 = 999.90
     });
 
     it('uses custom price when provided', async () => {

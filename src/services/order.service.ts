@@ -34,10 +34,11 @@ function splitPortfolio(
     const allocatedAmount = (item.weight / 100) * totalAmount;
     const price = prices.get(item.symbol.toUpperCase()) ?? config.defaultStockPrice;
     const quantity = parseFloat((allocatedAmount / price).toFixed(config.sharePrecision));
+    const amount = parseFloat((quantity * price).toFixed(2));
 
     return {
       symbol: item.symbol.toUpperCase(),
-      amount: parseFloat(allocatedAmount.toFixed(2)),
+      amount,
       price,
       quantity,
     };

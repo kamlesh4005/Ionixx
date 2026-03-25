@@ -89,7 +89,7 @@ curl -X POST http://localhost:3000/api/v1/orders/split \
   "idempotencyKey": "550e8400-e29b-41d4-a716-446655440000",
   "orderType": "BUY",
   "totalAmount": 10000,
-  "executionTime": "2025-03-18T09:30:00.000Z",
+  "executionTime": "2025-03-18T13:30:00.000Z",
   "orders": [
     { "symbol": "AAPL", "amount": 6000, "price": 150, "quantity": 40.000 },
     { "symbol": "TSLA", "amount": 4000, "price": 100, "quantity": 40.000 }
@@ -100,6 +100,8 @@ curl -X POST http://localhost:3000/api/v1/orders/split \
   }
 }
 ```
+
+> **Amount field:** `amount` reflects the actual cost of the rounded share quantity (`quantity × price`), not the pre-rounding allocation. For example, investing $1 000 in a $300 stock yields 3.333 shares; the reported amount is $999.90 (what is actually paid), not $1 000.00.
 
 Resending the same `idempotencyKey` returns HTTP 200 with header `X-Idempotent-Replayed: true`.
 
@@ -162,8 +164,6 @@ All tunables live in `src/config/index.ts`. Environment variables override defau
 | `corsOrigin` | `CORS_ORIGIN` | `false` (block all) | Allowed CORS origin |
 | `defaultStockPrice` | — | `100` | Fallback price when not provided |
 | `sharePrecision` | — | `3` | Decimal places for share quantities |
-| `marketOpenHourUTC` | — | `9` | Market open hour (UTC) |
-| `marketOpenMinuteUTC` | — | `30` | Market open minute (UTC) |
 | `requestTimeoutMs` | — | `5000` | Request timeout in ms |
 | `rateLimit.windowMs` | — | `60000` | Rate limit window (1 minute) |
 | `rateLimit.maxRequests` | — | `100` | Max requests per IP per window |
@@ -183,6 +183,19 @@ Every `POST /orders/split` requires a client-generated `idempotencyKey` (UUID v4
 - Response includes header `X-Idempotent-Replayed: true`
 
 A lock map (`Map<string, Promise<void>>`) prevents race conditions when concurrent requests share the same key — the second request waits for the first to complete, then returns the cached result.
+
+### Market Scheduling
+
+`executionTime` is derived from the **America/New_York** clock (handles EST/EDT automatically):
+
+| Current time (ET) | Scheduled execution |
+|---|---|
+| Mon–Fri 09:30 ≤ time < 16:00 | **Now** — market is open, execute immediately |
+| Mon–Fri before 09:30 ET | Today at 09:30 ET |
+| Mon–Fri after 16:00 ET | Next weekday at 09:30 ET |
+| Saturday or Sunday | Next Monday at 09:30 ET |
+
+09:30 ET = 14:30 UTC in winter (EST, UTC−5) and 13:30 UTC in summer (EDT, UTC−4).
 
 ### Graceful Shutdown
 
